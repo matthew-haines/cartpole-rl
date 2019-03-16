@@ -44,9 +44,9 @@ class Individual:
     def __init__(self, state_space, action_space, update_coefficient=0.005):
 
         self.layers = []
-        self.layers.append(Layer(state_space, 32, RELU))
-        self.layers.append(Layer(32, 16, RELU))
-        self.layers.append(Layer(16, action_space, Linear))
+        self.layers.append(Layer(state_space, 128, RELU))
+        self.layers.append(Layer(128, 64, RELU))
+        self.layers.append(Layer(64, action_space, Linear))
 
         self.update_coefficient = update_coefficient
 
@@ -69,7 +69,7 @@ class Individual:
 
 class Population:
 
-    def __init__(self, state_size, action_size, individual_count=100, update_coefficient=0.005):
+    def __init__(self, state_size, action_size, individual_count=1000, update_coefficient=0.005, update_decay=0.995, update_min=0.0005):
 
         self.state_size = state_size
         self.action_size = action_size
@@ -77,42 +77,46 @@ class Population:
         self.individual_count = individual_count
 
         self.update_coefficient = update_coefficient
+        self.update_decay = update_decay
+        self.update_min = update_min
 
         self.individuals = []
         for i in range(self.individual_count):
             self.individuals.append(Individual(
-                self.state_size, self.action_size, self.update_coefficient))
+                self.state_size, self.action_size, update_coefficient=self.update_coefficient))
 
         self.fitnesses = np.zeros((self.individual_count))
 
-    def evaluate(self, env, selected_individuals, time_limit, render=False):
+    def evaluate(self, env, selected_individuals, time_limit, trials=2, render=False):
 
         i = 0
 
         for individual in self.individuals:
 
-            done = False
-            state = env.reset()
-
             fitness = 0
 
-            for step in range(time_limit):
-                action = np.argmax(individual.compute(state))
-                if render:
-                    env.render()
+            for trial in range(trials):
 
-                next_state, reward, done, _ = env.step(action)
+                done = False
+                state = env.reset()
 
-                fitness += reward
+                for step in range(time_limit):
+                    action = np.argmax(individual.compute(state))
+                    if render:
+                        env.render()
 
-                if done:
-                    break
+                    next_state, reward, done, _ = env.step(action)
 
-                state = next_state
-                if step == time_limit - 1:
-                    print("survived")
+                    fitness += reward
 
-            self.fitnesses[i] = fitness
+                    if done:
+                        break
+
+                    state = next_state
+                    if step == time_limit - 1:
+                        print("survived")
+
+            self.fitnesses[i] = fitness / trials
 
         # Find the top individuals
         best_individual = np.argmax(self.fitnesses)
@@ -136,6 +140,9 @@ class Population:
 
         self.individuals = new_population
 
+        self.update_coefficient = max(
+            self.update_min, self.update_coefficient * self.update_decay)
+
     def save(self, name):
         with open('saved_models/{}_dne.pkl'.format(name), 'wb') as output_file:
             # This is the best individual
@@ -149,13 +156,13 @@ population = Population(env.observation_space.shape[0], env.action_space.n)
 
 mutation_count = 1000
 time_limit = 5000
-selected_individuals = 10
+selected_individuals = 100
 
 for _ in range(mutation_count):
 
     population.evaluate(env, selected_individuals, time_limit)
 
-    if _ % 5:
+    if _ % 100:
         population.save('population_{}'.format(_))
 
 env.close()
